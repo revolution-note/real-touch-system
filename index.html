@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>リアル触感</title>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      overflow: hidden;
+    }
+    .circle {
+      position: absolute;
+      width: 100px;
+      height: 100px;
+      background: radial-gradient(circle, #00ffcc, transparent);
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+<body>
+
+<script>
+  document.addEventListener("touchmove", (e) => {
+    const touch = e.touches[0];
+
+    const circle = document.createElement("div");
+    circle.classList.add("circle");
+    circle.style.left = touch.clientX + "px";
+    circle.style.top = touch.clientY + "px";
+
+    document.body.appendChild(circle);
+
+    if (navigator.vibrate) {
+      navigator.vibrate(10);
+    }
+
+    setTimeout(() => {
+      circle.remove();
+    }, 300);
+  });
+</script>
+
+</body>
+</html>
