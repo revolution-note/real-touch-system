@@ -4,31 +4,177 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>REAL MAGIC</title>
+
 <style>
-body{margin:0;background:black;overflow:hidden;}
-canvas{position:absolute;top:0;left:0;width:100%;height:100%;}
-#msg{
-  position:absolute;
-  top:16px;
-  left:16px;
+body {
+  margin:0;
+  overflow:hidden;
+  background:black;
+}
+
+#logo {
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
   color:white;
-  font-size:14px;
-  opacity:0.7;
+  font-size:28px;
+  letter-spacing:4px;
+  opacity:0;
+  transition:2s;
+  text-shadow:0 0 20px white;
+}
+
+#hint {
+  position:fixed;
+  bottom:10px;
+  left:10px;
+  color:rgba(255,255,255,0.15);
+  font-size:12px;
+}
+
+#tag {
+  position:fixed;
+  top:10px;
+  left:50%;
+  transform:translateX(-50%);
+  color:rgba(255,255,255,0.2);
+  font-size:12px;
 }
 </style>
 </head>
+
 <body>
 
 <canvas id="c"></canvas>
-<div id="msg">REAL MAGIC</div>
+<div id="logo">REAL MAGIC</div>
+<div id="hint">触る</div>
+<div id="tag">触れると、現実が変わる</div>
 
 <script>
 const c = document.getElementById("c");
 const ctx = c.getContext("2d");
-const msg = document.getElementById("msg");
 
 c.width = innerWidth;
 c.height = innerHeight;
 
-// ===== タッチ =====
-let touch={
+let particles = [];
+let lastTouch = Date.now();
+
+// ロゴ演出
+setTimeout(()=>{
+  logo.style.opacity = 1;
+},100);
+
+setTimeout(()=>{
+  logo.style.opacity = 0;
+},3000);
+
+setTimeout(()=>{
+  logo.style.display = "none";
+},5000);
+
+// 音
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound(x){
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  let pan = audioCtx.createStereoPanner();
+
+  osc.frequency.value = 200 + Math.random()*400;
+  gain.gain.value = 0.05;
+  pan.pan.value = (x / c.width)*2 -1;
+
+  osc.connect(pan);
+  pan.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  osc.start();
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+  setTimeout(()=>osc.stop(),300);
+}
+
+// 粒子生成
+function spawn(x,y){
+  lastTouch = Date.now();
+
+  for(let i=0;i<50;i++){
+    particles.push({
+      x, y,
+      vx:(Math.random()-0.5)*4,
+      vy:(Math.random()-0.5)*4,
+      life:120
+    });
+  }
+
+  playSound(x);
+}
+
+// 描画
+function draw(){
+
+  ctx.fillStyle = "rgba(0,0,0,0.05)";
+  ctx.fillRect(0,0,c.width,c.height);
+
+  particles.forEach((p,i)=>{
+
+    // 引き寄せ
+    let dx = (c.width/2 - p.x)*0.001;
+    let dy = (c.height/2 - p.y)*0.001;
+    p.vx += dx;
+    p.vy += dy;
+
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+
+    // 色変化
+    let hue = (Date.now()*0.05 + p.life*2) % 360;
+    ctx.fillStyle = `hsl(${hue},100%,60%)`;
+
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = ctx.fillStyle;
+
+    ctx.fillRect(p.x,p.y,2,2);
+
+    if(p.life <= 0){
+      particles.splice(i,1);
+    }
+  });
+
+  requestAnimationFrame(draw);
+}
+draw();
+
+// 操作
+c.addEventListener("touchmove", e=>{
+  let x = e.touches[0].clientX;
+  let y = e.touches[0].clientY;
+  spawn(x,y);
+});
+
+c.addEventListener("mousemove", e=>{
+  spawn(e.clientX, e.clientY);
+});
+
+// 世界の反応
+setInterval(()=>{
+  if(particles.length > 800){
+    hint.innerText = "生まれている";
+  } else if(particles.length < 50){
+    hint.innerText = "…";
+  }
+},1500);
+
+// 放置
+setInterval(()=>{
+  if(Date.now() - lastTouch > 10000){
+    hint.innerText = "また触れて";
+  }
+},2000);
+
+</script>
+
+</body>
+</html>
