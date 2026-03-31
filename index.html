@@ -35,8 +35,13 @@ const message = document.getElementById("message");
 canvas.width = innerWidth;
 canvas.height = innerHeight;
 
+window.addEventListener("resize", () => {
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+});
+
 // =====================
-// 🧬 初期ロード（永遠）
+// 🧬 初期ロード
 // =====================
 let saved = JSON.parse(localStorage.getItem("world")) || {
   energy: 1,
@@ -62,13 +67,22 @@ if (!username) {
 }
 
 // =====================
-// 🎧 音
+// 🎧 Audio（修正版）
 // =====================
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let audioCtx;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
 
 function playSound() {
+  if (!audioCtx) return;
+
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
+
   osc.connect(gain);
   gain.connect(audioCtx.destination);
 
@@ -87,7 +101,7 @@ function vibrate() {
 }
 
 // =====================
-// 🧠 履歴保存
+// 🧠 履歴
 // =====================
 function saveHistory() {
   history.push({ time: Date.now(), energy, mood });
@@ -95,7 +109,7 @@ function saveHistory() {
 }
 
 // =====================
-// 🧠 行動分析
+// 🧠 分析
 // =====================
 function analyzeBehavior() {
   if (history.length < 10) return "I'm learning you...";
@@ -116,7 +130,7 @@ function updateWorldRules() {
 }
 
 // =====================
-// 🧬 人格進化
+// 🧬 人格
 // =====================
 function evolvePersonality() {
   if (energy > 50) personality.kindness += 0.01;
@@ -153,7 +167,7 @@ function generateMessage() {
 }
 
 // =====================
-// ⏳ 時間進化（永遠）
+// ⏳ 永遠進化
 // =====================
 function passiveEvolution() {
   let now = Date.now();
@@ -172,7 +186,10 @@ let particles = [];
 let ripples = [];
 
 function createEffect(x, y) {
-  energy += 0.5;
+
+  initAudio(); // ←重要
+
+  energy += 1.0; // ←強化
   lastInteraction = Date.now();
 
   for (let i = 0; i < 5 + energy * 0.2; i++) {
@@ -206,9 +223,10 @@ canvas.addEventListener("touchmove", e => {
 });
 
 // =====================
-// 🔁 ループ（心臓）
+// 🔁 ループ
 // =====================
 function loop() {
+
   passiveEvolution();
   updateWorldRules();
 
@@ -231,7 +249,6 @@ function loop() {
     if(r.life<=0) ripples.splice(i,1);
   });
 
-  // 保存（永遠）
   localStorage.setItem("world", JSON.stringify({
     energy, mood, personality, history, lastTime: saved.lastTime
   }));
