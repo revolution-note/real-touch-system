@@ -2,60 +2,131 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>触ると進化する世界</title>
+<title>触れるだけで変わる世界</title>
+
 <style>
-body { margin:0; background:black; overflow:hidden; }
-#msg {
-  position:fixed;
-  bottom:10px;
-  left:10px;
-  color:white;
+body {
+  margin: 0;
+  background: black;
+  overflow: hidden;
+  font-family: sans-serif;
+}
+
+#message {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  color: white;
+  font-size: 16px;
+  opacity: 0.8;
 }
 </style>
+
 </head>
 <body>
 
-<div id="msg">触るだけで変わる</div>
+<div id="message">触れるだけで変わる</div>
 <canvas id="c"></canvas>
 
 <script>
-const c = document.getElementById("c");
-const ctx = c.getContext("2d");
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const message = document.getElementById("message");
 
-c.width = innerWidth;
-c.height = innerHeight;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
 let energy = 1;
 let particles = [];
+let ripples = [];
 
-document.addEventListener("mousemove", e=>{
-  energy += 0.01;
 
-  for(let i=0;i<3*energy;i++){
-    particles.push({
-      x:e.clientX,
-      y:e.clientY,
-      vx:(Math.random()-0.5)*3,
-      vy:(Math.random()-0.5)*3,
-      life:80
-    });
-  }
+// =====================
+// マウス操作
+// =====================
+canvas.addEventListener("mousemove", e => {
+  energy += 0.02;
+
+  createEffect(e.clientX, e.clientY);
 });
 
-function loop(){
-  ctx.fillStyle="rgba(0,0,0,0.2)";
-  ctx.fillRect(0,0,c.width,c.height);
+// =====================
+// タッチ操作（スマホ）
+// =====================
+canvas.addEventListener("touchmove", e => {
+  const touch = e.touches[0];
+  energy += 0.02;
 
-  particles.forEach((p,i)=>{
+  createEffect(touch.clientX, touch.clientY);
+});
+
+// =====================
+// エフェクト生成
+// =====================
+function createEffect(x, y) {
+
+  // 粒子
+  for (let i = 0; i < 5 * energy; i++) {
+    particles.push({
+      x: x,
+      y: y,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4,
+      life: 80
+    });
+  }
+
+  // 波紋
+  ripples.push({
+    x: x,
+    y: y,
+    radius: 0,
+    life: 40
+  });
+
+  // メッセージ変化（仮）
+  if (energy < 5) {
+    message.innerText = "まだ静か。でも何かが始まってる";
+  } else if (energy < 20) {
+    message.innerText = "動きが出てきた。方向を決めろ";
+  } else {
+    message.innerText = "エネルギーが集中してる。今が動くタイミング";
+  }
+}
+
+
+// =====================
+// 描画ループ
+// =====================
+function loop() {
+
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 粒子
+  particles.forEach((p, i) => {
     p.vy += 0.05;
     p.x += p.vx;
     p.y += p.vy;
     p.life--;
 
-    ctx.fillStyle="white";
-    ctx.fillRect(p.x,p.y,2,2);
+    ctx.fillStyle = `hsl(${energy * 30}, 100%, 50%)`;
+    ctx.fillRect(p.x, p.y, 2, 2);
 
-    if(p.life<=0) particles.splice(i,1);
+    if (p.life <= 0) particles.splice(i, 1);
+  });
+
+  // 波紋
+  ripples.forEach((r, i) => {
+    r.radius += 2;
+    r.life--;
+
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,255,${r.life / 40})`;
+    ctx.stroke();
+
+    if (r.life <= 0) ripples.splice(i, 1);
   });
 
   requestAnimationFrame(loop);
