@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>触れるだけで変わる世界</title>
+<title>Reactive World</title>
 
 <style>
 body {
@@ -25,7 +25,7 @@ body {
 </head>
 <body>
 
-<div id="message">触れるだけで変わる</div>
+<div id="message">Touch to change</div>
 <canvas id="c"></canvas>
 
 <script>
@@ -40,32 +40,18 @@ let energy = 1;
 let particles = [];
 let ripples = [];
 
-
-// =====================
-// マウス操作
-// =====================
 canvas.addEventListener("mousemove", e => {
   energy += 0.02;
-
   createEffect(e.clientX, e.clientY);
 });
 
-// =====================
-// タッチ操作（スマホ）
-// =====================
 canvas.addEventListener("touchmove", e => {
   const touch = e.touches[0];
   energy += 0.02;
-
   createEffect(touch.clientX, touch.clientY);
 });
 
-// =====================
-// エフェクト生成
-// =====================
 function createEffect(x, y) {
-
-  // 粒子
   for (let i = 0; i < 5 * energy; i++) {
     particles.push({
       x: x,
@@ -76,7 +62,6 @@ function createEffect(x, y) {
     });
   }
 
-  // 波紋
   ripples.push({
     x: x,
     y: y,
@@ -84,26 +69,19 @@ function createEffect(x, y) {
     life: 40
   });
 
-  // メッセージ変化（仮）
   if (energy < 5) {
-    message.innerText = "まだ静か。でも何かが始まってる";
+    message.innerText = "Something is starting";
   } else if (energy < 20) {
-    message.innerText = "動きが出てきた。方向を決めろ";
+    message.innerText = "Movement detected. Focus";
   } else {
-    message.innerText = "エネルギーが集中してる。今が動くタイミング";
+    message.innerText = "Energy is converging. Act now";
   }
 }
 
-
-// =====================
-// 描画ループ
-// =====================
 function loop() {
-
   ctx.fillStyle = "rgba(0,0,0,0.2)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // 粒子
   particles.forEach((p, i) => {
     p.vy += 0.05;
     p.x += p.vx;
@@ -116,7 +94,6 @@ function loop() {
     if (p.life <= 0) particles.splice(i, 1);
   });
 
-  // 波紋
   ripples.forEach((r, i) => {
     r.radius += 2;
     r.life--;
