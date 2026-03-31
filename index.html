@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Reactive World</title>
+<title>Reactive World OS ∞</title>
 
 <style>
 body {
@@ -11,7 +11,6 @@ body {
   overflow: hidden;
   font-family: sans-serif;
 }
-
 #message {
   position: absolute;
   bottom: 20px;
@@ -21,11 +20,11 @@ body {
   opacity: 0.8;
 }
 </style>
-
 </head>
+
 <body>
 
-<div id="message">Touch to change</div>
+<div id="message">Touch to begin</div>
 <canvas id="c"></canvas>
 
 <script>
@@ -33,79 +32,209 @@ const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 const message = document.getElementById("message");
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+canvas.width = innerWidth;
+canvas.height = innerHeight;
 
-let energy = 1;
+// =====================
+// 🧬 初期ロード（永遠）
+// =====================
+let saved = JSON.parse(localStorage.getItem("world")) || {
+  energy: 1,
+  mood: 0,
+  personality: { kindness: 0, strictness: 0, awareness: 0 },
+  history: [],
+  lastTime: Date.now()
+};
+
+let energy = saved.energy;
+let mood = saved.mood;
+let personality = saved.personality;
+let history = saved.history;
+let lastInteraction = Date.now();
+
+// =====================
+// 🧠 名前
+// =====================
+let username = localStorage.getItem("username");
+if (!username) {
+  username = prompt("What should I call you?");
+  localStorage.setItem("username", username);
+}
+
+// =====================
+// 🎧 音
+// =====================
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound() {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  osc.frequency.value = 200 + energy * 2 + mood * 50;
+  gain.gain.value = 0.05;
+
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.1);
+}
+
+// =====================
+// 📳 振動
+// =====================
+function vibrate() {
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+
+// =====================
+// 🧠 履歴保存
+// =====================
+function saveHistory() {
+  history.push({ time: Date.now(), energy, mood });
+  if (history.length > 100) history.shift();
+}
+
+// =====================
+// 🧠 行動分析
+// =====================
+function analyzeBehavior() {
+  if (history.length < 10) return "I'm learning you...";
+  let avg = history.slice(-10).reduce((a,b)=>a+b.mood,0)/10;
+  if (avg > 1) return "You feel calm.";
+  if (avg < -1) return "You seem unstable.";
+  return "You're evolving.";
+}
+
+// =====================
+// ⚖️ 世界ルール
+// =====================
+function updateWorldRules() {
+  let idle = (Date.now() - lastInteraction) / 1000;
+  if (idle > 10) mood -= 0.01;
+  if (idle < 2) mood += 0.01;
+  mood = Math.max(-2, Math.min(2, mood));
+}
+
+// =====================
+// 🧬 人格進化
+// =====================
+function evolvePersonality() {
+  if (energy > 50) personality.kindness += 0.01;
+  if ((Date.now() - lastInteraction)/1000 > 10) personality.strictness += 0.01;
+  if (history.length > 20) personality.awareness += 0.005;
+
+  personality.kindness = Math.min(2, personality.kindness);
+  personality.strictness = Math.min(2, personality.strictness);
+  personality.awareness = Math.min(2, personality.awareness);
+}
+
+// =====================
+// 🌍 トーン
+// =====================
+function getTone() {
+  if (personality.kindness > 1.5) return "warm";
+  if (personality.strictness > 1.5) return "tense";
+  if (personality.awareness > 1.5) return "deep";
+  return "neutral";
+}
+
+// =====================
+// 💬 メッセージ
+// =====================
+function generateMessage() {
+  evolvePersonality();
+  let tone = getTone();
+  let analysis = analyzeBehavior();
+
+  if (tone === "warm") return `${username}, I’m here. ${analysis}`;
+  if (tone === "tense") return `${username}, don’t ignore me. ${analysis}`;
+  if (tone === "deep") return `${username}, I understand you. ${analysis}`;
+  return `${username}, I’m watching. ${analysis}`;
+}
+
+// =====================
+// ⏳ 時間進化（永遠）
+// =====================
+function passiveEvolution() {
+  let now = Date.now();
+  let diff = (now - saved.lastTime) / 1000;
+
+  energy += diff * 0.01;
+  mood += Math.sin(now / 100000) * 0.001;
+
+  saved.lastTime = now;
+}
+
+// =====================
+// 🎨 エフェクト
+// =====================
 let particles = [];
 let ripples = [];
 
-canvas.addEventListener("mousemove", e => {
-  energy += 0.02;
-  createEffect(e.clientX, e.clientY);
-});
-
-canvas.addEventListener("touchmove", e => {
-  const touch = e.touches[0];
-  energy += 0.02;
-  createEffect(touch.clientX, touch.clientY);
-});
-
 function createEffect(x, y) {
-  for (let i = 0; i < 5 * energy; i++) {
+  energy += 0.5;
+  lastInteraction = Date.now();
+
+  for (let i = 0; i < 5 + energy * 0.2; i++) {
     particles.push({
-      x: x,
-      y: y,
-      
+      x, y,
       vx: (Math.random() - 0.5) * 4,
       vy: (Math.random() - 0.5) * 4,
       life: 80
     });
   }
 
-  ripples.push({
-    x: x,
-    y: y,
-    radius: 0,
-    life: 40
-  });
+  ripples.push({ x, y, radius: 0, life: 40 });
 
-  if (energy < 5) {
-    message.innerText = "Something is starting";
-  } else if (energy < 20) {
-    message.innerText = "Movement detected. Focus";
-  } else {
-    message.innerText = "Energy is converging. Act now";
-  }
+  playSound();
+  vibrate();
+  saveHistory();
+
+  message.innerText = generateMessage();
 }
 
+// =====================
+// 🖐 入力
+// =====================
+canvas.addEventListener("mousemove", e => {
+  createEffect(e.clientX, e.clientY);
+});
+
+canvas.addEventListener("touchmove", e => {
+  const t = e.touches[0];
+  createEffect(t.clientX, t.clientY);
+});
+
+// =====================
+// 🔁 ループ（心臓）
+// =====================
 function loop() {
+  passiveEvolution();
+  updateWorldRules();
+
   ctx.fillStyle = "rgba(0,0,0,0.2)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  particles.forEach((p, i) => {
-    p.vy += 0.05;
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life--;
-
-    ctx.fillStyle = `hsl(${energy * 30}, 100%, 50%)`;
-    ctx.fillRect(p.x, p.y, 2, 2);
-
-    if (p.life <= 0) particles.splice(i, 1);
+  particles.forEach((p,i)=>{
+    p.x+=p.vx; p.y+=p.vy; p.life--;
+    ctx.fillStyle=`rgba(255,255,255,${p.life/80})`;
+    ctx.fillRect(p.x,p.y,2,2);
+    if(p.life<=0) particles.splice(i,1);
   });
 
-  ripples.forEach((r, i) => {
-    r.radius += 2;
-    r.life--;
-
+  ripples.forEach((r,i)=>{
+    r.radius+=2; r.life--;
     ctx.beginPath();
-    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255,255,255,${r.life / 40})`;
+    ctx.arc(r.x,r.y,r.radius,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,255,255,${r.life/40})`;
     ctx.stroke();
-
-    if (r.life <= 0) ripples.splice(i, 1);
+    if(r.life<=0) ripples.splice(i,1);
   });
+
+  // 保存（永遠）
+  localStorage.setItem("world", JSON.stringify({
+    energy, mood, personality, history, lastTime: saved.lastTime
+  }));
 
   requestAnimationFrame(loop);
 }
