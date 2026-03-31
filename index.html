@@ -2,179 +2,161 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>REAL MAGIC</title>
-
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Real Touch System</title>
 <style>
-body {
-  margin:0;
-  overflow:hidden;
-  background:black;
-}
-
-#logo {
-  position:fixed;
-  top:50%;
-  left:50%;
-  transform:translate(-50%,-50%);
-  color:white;
-  font-size:28px;
-  letter-spacing:4px;
-  opacity:0;
-  transition:2s;
-  text-shadow:0 0 20px white;
-}
-
-#hint {
-  position:fixed;
-  bottom:10px;
-  left:10px;
-  color:rgba(255,255,255,0.15);
-  font-size:12px;
-}
-
-#tag {
-  position:fixed;
-  top:10px;
-  left:50%;
-  transform:translateX(-50%);
-  color:rgba(255,255,255,0.2);
-  font-size:12px;
-}
+body{margin:0;background:#000;overflow:hidden;}
+#ui{position:fixed;bottom:10px;left:10px;}
+button{margin:4px;padding:10px;}
 </style>
 </head>
-
 <body>
 
 <canvas id="c"></canvas>
-<div id="logo">REAL MAGIC</div>
-<div id="hint">触る</div>
-<div id="tag">触れると、現実が変わる</div>
 
-<script>
-const c = document.getElementById("c");
-const ctx = c.getContext("2d");
+<div id="ui">
+<button onclick="connect()">接続</button>
+<button onclick="mode=1">水</button>
+<button onclick="mode=2">火</button>
+<button onclick="mode=3">石</button>
+<button onclick="toggleSlice()">断面</button>
+</div>
 
-c.width = innerWidth;
-c.height = innerHeight;
+<script type="module">
 
-let particles = [];
-let lastTouch = Date.now();
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js";
 
-// ロゴ演出
-setTimeout(()=>{
-  logo.style.opacity = 1;
-},100);
+const canvas = document.getElementById("c");
+const renderer = new THREE.WebGLRenderer({canvas});
+renderer.setSize(window.innerWidth,window.innerHeight);
 
-setTimeout(()=>{
-  logo.style.opacity = 0;
-},3000);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70,window.innerWidth/window.innerHeight,0.1,100);
+camera.position.z = 2;
 
-setTimeout(()=>{
-  logo.style.display = "none";
-},5000);
+// 画像
+const tex = await new THREE.TextureLoader().loadAsync("https://picsum.photos/512");
+
+const geo = new THREE.PlaneGeometry(1.5,1.5,128,128);
+const mat = new THREE.MeshStandardMaterial({map:tex});
+const mesh = new THREE.Mesh(geo,mat);
+scene.add(mesh);
+
+// ライト
+const light = new THREE.DirectionalLight(0xffffff,1);
+light.position.set(1,1,1);
+scene.add(light);
+
+// 入力
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+let hit=false;
+let uv=new THREE.Vector2();
+
+canvas.addEventListener("pointermove",e=>{
+  mouse.x = (e.clientX/window.innerWidth)*2-1;
+  mouse.y = -(e.clientY/window.innerHeight)*2+1;
+
+  ray.setFromCamera(mouse,camera);
+  const res = ray.intersectObject(mesh);
+
+  if(res.length>0){
+    hit=true;
+    uv = res[0].uv;
+  }else{
+    hit=false;
+  }
+});
+
+// 変形
+let touches=[];
+
+function deform(){
+  const pos = mesh.geometry.attributes.position;
+
+  for(let i=0;i<pos.count;i++){
+    let z=0;
+
+    const u = (i%128)/128;
+    const v = Math.floor(i/128)/128;
+
+    touches.forEach(t=>{
+      const d = Math.hypot(u-t.x,v-t.y);
+      if(d<0.1){
+        z -= (0.1-d)*t.f;
+      }
+    });
+
+    pos.array[i*3+2] = z;
+  }
+
+  pos.needsUpdate=true;
+
+  touches = touches.map(t=>({x:t.x,y:t.y,f:t.f*0.9})).filter(t=>t.f>0.01);
+}
 
 // 音
-let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-function playSound(x){
-  let osc = audioCtx.createOscillator();
-  let gain = audioCtx.createGain();
-  let pan = audioCtx.createStereoPanner();
-
-  osc.frequency.value = 200 + Math.random()*400;
-  gain.gain.value = 0.05;
-  pan.pan.value = (x / c.width)*2 -1;
-
-  osc.connect(pan);
-  pan.connect(gain);
-  gain.connect(audioCtx.destination);
-
-  osc.start();
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-  setTimeout(()=>osc.stop(),300);
+const ctx = new AudioContext();
+function play(f){
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.frequency.value = 200+f*400;
+  g.gain.value = 0.1;
+  o.connect(g).connect(ctx.destination);
+  o.start();
+  o.stop(ctx.currentTime+0.05);
 }
 
-// 粒子生成
-function spawn(x,y){
-  lastTouch = Date.now();
-
-  for(let i=0;i<50;i++){
-    particles.push({
-      x, y,
-      vx:(Math.random()-0.5)*4,
-      vy:(Math.random()-0.5)*4,
-      life:120
-    });
+// 振動
+function vib(f){
+  if(navigator.vibrate){
+    navigator.vibrate(10+f*30);
   }
-
-  playSound(x);
 }
 
-// 描画
-function draw(){
+// デバイス
+let port,writer;
 
-  ctx.fillStyle = "rgba(0,0,0,0.05)";
-  ctx.fillRect(0,0,c.width,c.height);
-
-  particles.forEach((p,i)=>{
-
-    // 引き寄せ
-    let dx = (c.width/2 - p.x)*0.001;
-    let dy = (c.height/2 - p.y)*0.001;
-    p.vx += dx;
-    p.vy += dy;
-
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life--;
-
-    // 色変化
-    let hue = (Date.now()*0.05 + p.life*2) % 360;
-    ctx.fillStyle = `hsl(${hue},100%,60%)`;
-
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = ctx.fillStyle;
-
-    ctx.fillRect(p.x,p.y,2,2);
-
-    if(p.life <= 0){
-      particles.splice(i,1);
-    }
-  });
-
-  requestAnimationFrame(draw);
+async function connect(){
+  port = await navigator.serial.requestPort();
+  await port.open({baudRate:9600});
+  writer = port.writable.getWriter();
 }
-draw();
 
-// 操作
-c.addEventListener("touchmove", e=>{
-  let x = e.touches[0].clientX;
-  let y = e.touches[0].clientY;
-  spawn(x,y);
-});
+async function send(t){
+  if(!writer) return;
+  await writer.write(new Uint8Array([t]));
+}
 
-c.addEventListener("mousemove", e=>{
-  spawn(e.clientX, e.clientY);
-});
+// モード
+let mode=1;
 
-// 世界の反応
-setInterval(()=>{
-  if(particles.length > 800){
-    hint.innerText = "生まれている";
-  } else if(particles.length < 50){
-    hint.innerText = "…";
+// 断面
+let slice=false;
+function toggleSlice(){
+  slice=!slice;
+  renderer.clippingPlanes = slice?[new THREE.Plane(new THREE.Vector3(0,0,1),0)]:[];
+}
+
+// ループ
+function loop(){
+
+  if(hit){
+    touches.push({x:uv.x,y:uv.y,f:0.5});
+
+    play(0.5);
+    vib(0.5);
+    send(mode);
   }
-},1500);
 
-// 放置
-setInterval(()=>{
-  if(Date.now() - lastTouch > 10000){
-    hint.innerText = "また触れて";
-  }
-},2000);
+  deform();
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+
+loop();
 
 </script>
-
 </body>
 </html>
