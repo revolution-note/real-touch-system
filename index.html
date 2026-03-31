@@ -3,25 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <title>Reactive World OS ∞</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 
 <style>
-body {
+html, body {
   margin: 0;
+  width: 100%;
+  height: 100%;
   background: black;
   overflow: hidden;
   font-family: sans-serif;
 }
+
+body {
+  touch-action: none;
+}
+
 #message {
   position: absolute;
   bottom: 20px;
   left: 20px;
   color: white;
   font-size: 16px;
-  opacity: 0.8;
+  opacity: 0.85;
+  z-index: 10;
+  text-shadow: 0 0 8px rgba(255,255,255,0.25);
 }
 </style>
 </head>
-
 <body>
 
 <div id="message">Touch to begin</div>
@@ -32,16 +41,15 @@ const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 const message = document.getElementById("message");
 
-canvas.width = innerWidth;
-canvas.height = innerHeight;
-
-window.addEventListener("resize", () => {
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
-});
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
 
 // =====================
-// 🧬 初期ロード
+// Initial load
 // =====================
 let saved = JSON.parse(localStorage.getItem("world")) || {
   energy: 1,
@@ -58,22 +66,25 @@ let history = saved.history;
 let lastInteraction = Date.now();
 
 // =====================
-// 🧠 名前
+// Username
 // =====================
 let username = localStorage.getItem("username");
 if (!username) {
-  username = prompt("What should I call you?");
+  username = prompt("What should I call you?") || "You";
   localStorage.setItem("username", username);
 }
 
 // =====================
-// 🎧 Audio（修正版）
+// Audio
 // =====================
 let audioCtx;
 
 function initAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
   }
 }
 
@@ -83,58 +94,71 @@ function playSound() {
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
 
+  osc.type = "sine";
   osc.connect(gain);
   gain.connect(audioCtx.destination);
 
-  osc.frequency.value = 200 + energy * 2 + mood * 50;
-  gain.gain.value = 0.05;
+  osc.frequency.value = 150 + energy * 4 + mood * 120;
+  gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.08, audioCtx.currentTime + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.18);
 
   osc.start();
-  osc.stop(audioCtx.currentTime + 0.1);
+  osc.stop(audioCtx.currentTime + 0.18);
 }
 
 // =====================
-// 📳 振動
+// Vibration
 // =====================
 function vibrate() {
-  if (navigator.vibrate) navigator.vibrate(10);
+  if (navigator.vibrate) {
+    navigator.vibrate(12);
+  }
 }
 
 // =====================
-// 🧠 履歴
+// History
 // =====================
 function saveHistory() {
-  history.push({ time: Date.now(), energy, mood });
+  history.push({
+    time: Date.now(),
+    energy,
+    mood
+  });
   if (history.length > 100) history.shift();
 }
 
 // =====================
-// 🧠 分析
+// Analysis
 // =====================
 function analyzeBehavior() {
   if (history.length < 10) return "I'm learning you...";
-  let avg = history.slice(-10).reduce((a,b)=>a+b.mood,0)/10;
-  if (avg > 1) return "You feel calm.";
-  if (avg < -1) return "You seem unstable.";
+  const recent = history.slice(-10);
+  const avgMood = recent.reduce((sum, item) => sum + item.mood, 0) / recent.length;
+
+  if (avgMood > 1) return "You feel calm.";
+  if (avgMood < -1) return "You seem unstable.";
   return "You're evolving.";
 }
 
 // =====================
-// ⚖️ 世界ルール
+// World rules
 // =====================
 function updateWorldRules() {
-  let idle = (Date.now() - lastInteraction) / 1000;
+  const idle = (Date.now() - lastInteraction) / 1000;
+
   if (idle > 10) mood -= 0.01;
   if (idle < 2) mood += 0.01;
+
   mood = Math.max(-2, Math.min(2, mood));
 }
 
 // =====================
-// 🧬 人格
+// Personality
 // =====================
 function evolvePersonality() {
   if (energy > 50) personality.kindness += 0.01;
-  if ((Date.now() - lastInteraction)/1000 > 10) personality.strictness += 0.01;
+  if ((Date.now() - lastInteraction) / 1000 > 10) personality.strictness += 0.01;
   if (history.length > 20) personality.awareness += 0.005;
 
   personality.kindness = Math.min(2, personality.kindness);
@@ -143,7 +167,7 @@ function evolvePersonality() {
 }
 
 // =====================
-// 🌍 トーン
+// Tone
 // =====================
 function getTone() {
   if (personality.kindness > 1.5) return "warm";
@@ -153,12 +177,12 @@ function getTone() {
 }
 
 // =====================
-// 💬 メッセージ
+// Message
 // =====================
 function generateMessage() {
   evolvePersonality();
-  let tone = getTone();
-  let analysis = analyzeBehavior();
+  const tone = getTone();
+  const analysis = analyzeBehavior();
 
   if (tone === "warm") return `${username}, I’m here. ${analysis}`;
   if (tone === "tense") return `${username}, don’t ignore me. ${analysis}`;
@@ -167,41 +191,50 @@ function generateMessage() {
 }
 
 // =====================
-// ⏳ 永遠進化
+// Passive evolution
 // =====================
 function passiveEvolution() {
-  let now = Date.now();
-  let diff = (now - saved.lastTime) / 1000;
+  const now = Date.now();
+  const diff = (now - saved.lastTime) / 1000;
 
   energy += diff * 0.01;
   mood += Math.sin(now / 100000) * 0.001;
+
+  energy = Math.min(300, energy);
+  mood = Math.max(-2, Math.min(2, mood));
 
   saved.lastTime = now;
 }
 
 // =====================
-// 🎨 エフェクト
+// Visual effect
 // =====================
 let particles = [];
 let ripples = [];
 
 function createEffect(x, y) {
+  initAudio();
 
-  initAudio(); // ←重要
-
-  energy += 1.0; // ←強化
+  energy += 3.0;
+  energy = Math.min(300, energy);
   lastInteraction = Date.now();
 
-  for (let i = 0; i < 5 + energy * 0.2; i++) {
+  for (let i = 0; i < 15 + energy * 0.4; i++) {
     particles.push({
-      x, y,
-      vx: (Math.random() - 0.5) * 4,
-      vy: (Math.random() - 0.5) * 4,
-      life: 80
+      x,
+      y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6,
+      life: 100
     });
   }
 
-  ripples.push({ x, y, radius: 0, life: 40 });
+  ripples.push({
+    x,
+    y,
+    radius: 0,
+    life: 60
+  });
 
   playSound();
   vibrate();
@@ -211,46 +244,72 @@ function createEffect(x, y) {
 }
 
 // =====================
-// 🖐 入力
+// Input
 // =====================
 canvas.addEventListener("mousemove", e => {
   createEffect(e.clientX, e.clientY);
 });
 
+canvas.addEventListener("touchstart", e => {
+  const t = e.touches[0];
+  if (t) createEffect(t.clientX, t.clientY);
+}, { passive: true });
+
 canvas.addEventListener("touchmove", e => {
   const t = e.touches[0];
-  createEffect(t.clientX, t.clientY);
-});
+  if (t) createEffect(t.clientX, t.clientY);
+}, { passive: true });
 
 // =====================
-// 🔁 ループ
+// Loop
 // =====================
 function loop() {
-
   passiveEvolution();
   updateWorldRules();
 
-  ctx.fillStyle = "rgba(0,0,0,0.2)";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  particles.forEach((p,i)=>{
-    p.x+=p.vx; p.y+=p.vy; p.life--;
-    ctx.fillStyle=`rgba(255,255,255,${p.life/80})`;
-    ctx.fillRect(p.x,p.y,2,2);
-    if(p.life<=0) particles.splice(i,1);
+  particles.forEach((p, i) => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.99;
+    p.vy *= 0.99;
+    p.life--;
+
+    const r = 255;
+    const g = Math.min(255, energy * 5);
+    const b = Math.max(50, mood * 100 + 150);
+
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${p.life / 100})`;
+    ctx.fillRect(p.x, p.y, 2.4, 2.4);
+
+    if (p.life <= 0) particles.splice(i, 1);
   });
 
-  ripples.forEach((r,i)=>{
-    r.radius+=2; r.life--;
+  ripples.forEach((ripple, i) => {
+    ripple.radius += 2.8;
+    ripple.life--;
+
+    const r = 255;
+    const g = Math.min(255, energy * 5);
+    const b = Math.max(50, mood * 100 + 150);
+
     ctx.beginPath();
-    ctx.arc(r.x,r.y,r.radius,0,Math.PI*2);
-    ctx.strokeStyle=`rgba(255,255,255,${r.life/40})`;
+    ctx.lineWidth = 2.5;
+    ctx.arc(ripple.x, ripple.y, ripple.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${ripple.life / 60})`;
     ctx.stroke();
-    if(r.life<=0) ripples.splice(i,1);
+
+    if (ripple.life <= 0) ripples.splice(i, 1);
   });
 
   localStorage.setItem("world", JSON.stringify({
-    energy, mood, personality, history, lastTime: saved.lastTime
+    energy,
+    mood,
+    personality,
+    history,
+    lastTime: saved.lastTime
   }));
 
   requestAnimationFrame(loop);
