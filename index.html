@@ -2,315 +2,193 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Reactive World OS ∞</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-html, body {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-  background: black;
-  overflow: hidden;
-  font-family: sans-serif;
+body{margin:0;background:black;overflow:hidden;}
+video,canvas{
+  position:absolute; top:0; left:0; width:100%; height:100%;
 }
-
-body {
-  touch-action: none;
-}
-
-#message {
-  position: absolute;
-  bottom: 20px;
-  left: 20px;
-  color: white;
-  font-size: 16px;
-  opacity: 0.85;
-  z-index: 10;
-  text-shadow: 0 0 8px rgba(255,255,255,0.25);
+#msg{
+  position:absolute; top:16px; left:16px; color:#fff; font-size:16px; opacity:.8;
 }
 </style>
 </head>
 <body>
 
-<div id="message">Touch to begin</div>
+<video id="video" autoplay playsinline></video>
 <canvas id="c"></canvas>
+<div id="msg">Touch.</div>
 
 <script>
+const video = document.getElementById("video");
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
-const message = document.getElementById("message");
+const msg = document.getElementById("msg");
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-resizeCanvas();
-window.addEventListener("resize", resizeCanvas);
+canvas.width = innerWidth;
+canvas.height = innerHeight;
 
-// =====================
-// Initial load
-// =====================
-let saved = JSON.parse(localStorage.getItem("world")) || {
-  energy: 1,
-  mood: 0,
-  personality: { kindness: 0, strictness: 0, awareness: 0 },
-  history: [],
-  lastTime: Date.now()
-};
+// ===== カメラ（AR）=====
+navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
+.then(stream=> video.srcObject = stream);
 
-let energy = saved.energy;
-let mood = saved.mood;
-let personality = saved.personality;
-let history = saved.history;
-let lastInteraction = Date.now();
-
-// =====================
-// Username
-// =====================
-let username = localStorage.getItem("username");
-if (!username) {
-  username = prompt("What should I call you?") || "You";
-  localStorage.setItem("username", username);
-}
-
-// =====================
-// Audio
-// =====================
+// ===== 音（低音）=====
 let audioCtx;
-
-function initAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
+function initAudio(){
+  if(!audioCtx){
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
   }
 }
-
-function playSound() {
-  if (!audioCtx) return;
-
+function playSound(power){
+  if(!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
-
-  osc.type = "sine";
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-
-  osc.frequency.value = 150 + energy * 4 + mood * 120;
-  gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.08, audioCtx.currentTime + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.18);
-
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.18);
+  osc.type="sine";
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.frequency.value = 40 + power*60; // 低音
+  gain.gain.value = 0.1;
+  osc.start(); osc.stop(audioCtx.currentTime+0.06);
 }
 
-// =====================
-// Vibration
-// =====================
-function vibrate() {
-  if (navigator.vibrate) {
-    navigator.vibrate(12);
+// ===== 振動 =====
+function vibrate(power){
+  if(navigator.vibrate){
+    // パルスで“コツン感”
+    navigator.vibrate([6, 12, 6]);
   }
 }
 
-// =====================
-// History
-// =====================
-function saveHistory() {
-  history.push({
-    time: Date.now(),
-    energy,
-    mood
-  });
-  if (history.length > 100) history.shift();
-}
+// ===== 触れる画像（グリッド）=====
+const img = new Image();
+img.src = "your-image.jpg"; // ←同階層に置く
 
-// =====================
-// Analysis
-// =====================
-function analyzeBehavior() {
-  if (history.length < 10) return "I'm learning you...";
-  const recent = history.slice(-10);
-  const avgMood = recent.reduce((sum, item) => sum + item.mood, 0) / recent.length;
+const gap = 14;           // 細かさ（小さいほど滑らか）
+let points = [];
 
-  if (avgMood > 1) return "You feel calm.";
-  if (avgMood < -1) return "You seem unstable.";
-  return "You're evolving.";
-}
+function buildGrid(){
+  points = [];
+  const w = img.width, h = img.height;
+  const ox = canvas.width/2 - w/2;
+  const oy = canvas.height/2 - h/2;
 
-// =====================
-// World rules
-// =====================
-function updateWorldRules() {
-  const idle = (Date.now() - lastInteraction) / 1000;
-
-  if (idle > 10) mood -= 0.01;
-  if (idle < 2) mood += 0.01;
-
-  mood = Math.max(-2, Math.min(2, mood));
-}
-
-// =====================
-// Personality
-// =====================
-function evolvePersonality() {
-  if (energy > 50) personality.kindness += 0.01;
-  if ((Date.now() - lastInteraction) / 1000 > 10) personality.strictness += 0.01;
-  if (history.length > 20) personality.awareness += 0.005;
-
-  personality.kindness = Math.min(2, personality.kindness);
-  personality.strictness = Math.min(2, personality.strictness);
-  personality.awareness = Math.min(2, personality.awareness);
-}
-
-// =====================
-// Tone
-// =====================
-function getTone() {
-  if (personality.kindness > 1.5) return "warm";
-  if (personality.strictness > 1.5) return "tense";
-  if (personality.awareness > 1.5) return "deep";
-  return "neutral";
-}
-
-// =====================
-// Message
-// =====================
-function generateMessage() {
-  evolvePersonality();
-  const tone = getTone();
-  const analysis = analyzeBehavior();
-
-  if (tone === "warm") return `${username}, I’m here. ${analysis}`;
-  if (tone === "tense") return `${username}, don’t ignore me. ${analysis}`;
-  if (tone === "deep") return `${username}, I understand you. ${analysis}`;
-  return `${username}, I’m watching. ${analysis}`;
-}
-
-// =====================
-// Passive evolution
-// =====================
-function passiveEvolution() {
-  const now = Date.now();
-  const diff = (now - saved.lastTime) / 1000;
-
-  energy += diff * 0.01;
-  mood += Math.sin(now / 100000) * 0.001;
-
-  energy = Math.min(300, energy);
-  mood = Math.max(-2, Math.min(2, mood));
-
-  saved.lastTime = now;
-}
-
-// =====================
-// Visual effect
-// =====================
-let particles = [];
-let ripples = [];
-
-function createEffect(x, y) {
-  initAudio();
-
-  energy += 3.0;
-  energy = Math.min(300, energy);
-  lastInteraction = Date.now();
-
-  for (let i = 0; i < 15 + energy * 0.4; i++) {
-    particles.push({
-      x,
-      y,
-      vx: (Math.random() - 0.5) * 6,
-      vy: (Math.random() - 0.5) * 6,
-      life: 100
-    });
+  for(let y=0;y<h;y+=gap){
+    for(let x=0;x<w;x+=gap){
+      const px = ox + x;
+      const py = oy + y;
+      points.push({x:px,y:py,ox:px,oy:py,vx:0,vy:0});
+    }
   }
-
-  ripples.push({
-    x,
-    y,
-    radius: 0,
-    life: 60
-  });
-
-  playSound();
-  vibrate();
-  saveHistory();
-
-  message.innerText = generateMessage();
 }
 
-// =====================
-// Input
-// =====================
-canvas.addEventListener("mousemove", e => {
-  createEffect(e.clientX, e.clientY);
+img.onload = buildGrid;
+
+// ===== 入力 =====
+let touch={x:0,y:0,px:0,py:0,active:false};
+
+function setTouch(x,y){
+  touch.px = touch.x; touch.py = touch.y;
+  touch.x = x; touch.y = y;
+  touch.active = true;
+}
+
+canvas.addEventListener("touchstart", e=>{ initAudio(); });
+canvas.addEventListener("mousemove", ()=>{ initAudio(); });
+
+canvas.addEventListener("mousemove", e=>{
+  setTouch(e.clientX, e.clientY);
 });
 
-canvas.addEventListener("touchstart", e => {
-  const t = e.touches[0];
-  if (t) createEffect(t.clientX, t.clientY);
-}, { passive: true });
+canvas.addEventListener("touchmove", e=>{
+  const t=e.touches[0];
+  setTouch(t.clientX, t.clientY);
+});
 
-canvas.addEventListener("touchmove", e => {
-  const t = e.touches[0];
-  if (t) createEffect(t.clientX, t.clientY);
-}, { passive: true });
+canvas.addEventListener("touchend", ()=> touch.active=false);
+canvas.addEventListener("mouseleave", ()=> touch.active=false);
 
-// =====================
-// Loop
-// =====================
-function loop() {
-  passiveEvolution();
-  updateWorldRules();
+// ===== 状態（意味）=====
+let energy = 0;
 
-  ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+// ===== ループ =====
+function loop(){
+  // AR背景
+  ctx.drawImage(video,0,0,canvas.width,canvas.height);
 
-  particles.forEach((p, i) => {
-    p.x += p.vx;
-    p.y += p.vy;
-    p.vx *= 0.99;
-    p.vy *= 0.99;
-    p.life--;
+  // 入力強度
+  let speed = Math.hypot(touch.x-touch.px, touch.y-touch.py);
+  let power = Math.min(1, speed/20);
 
-    const r = 255;
-    const g = Math.min(255, energy * 5);
-    const b = Math.max(50, mood * 100 + 150);
+  // 局所変形（“指の周りだけ”）
+  points.forEach(p=>{
+    if(touch.active){
+      const dx = touch.x - p.x;
+      const dy = touch.y - p.y;
+      const dist = Math.hypot(dx,dy);
 
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${p.life / 100})`;
-    ctx.fillRect(p.x, p.y, 2.4, 2.4);
+      if(dist < 120){
+        const f = (120 - dist)/120;
 
-    if (p.life <= 0) particles.splice(i, 1);
+        // 押し込み（遅延でリアル化）
+        setTimeout(()=>{
+          // 吸着＋引きずり
+          p.vx += dx * 0.02 * f;
+          p.vy += dy * 0.02 * f;
+
+          // “止まる”感じ（引っかかり）
+          p.vx *= 0.85;
+          p.vy *= 0.85;
+
+          // 位置も少し追従
+          p.x += dx * 0.02 * f;
+          p.y += dy * 0.02 * f;
+        }, 20);
+
+        // 音（少し遅らせる）
+        setTimeout(()=> playSound(power), 40);
+
+        // 振動（さらに遅らせる）
+        setTimeout(()=> vibrate(power), 60);
+
+        energy += 0.6;
+      }
+    }
+
+    // バネで戻る
+    p.vx += (p.ox - p.x)*0.02;
+    p.vy += (p.oy - p.y)*0.02;
+
+    // 摩擦（重さ）
+    p.vx *= 0.92; p.vy *= 0.92;
+
+    p.x += p.vx; p.y += p.vy;
   });
 
-  ripples.forEach((ripple, i) => {
-    ripple.radius += 2.8;
-    ripple.life--;
+  // 画像を“面として”再描画
+  if(img.complete){
+    const w = img.width, h = img.height;
+    const ox = canvas.width/2 - w/2;
+    const oy = canvas.height/2 - h/2;
 
-    const r = 255;
-    const g = Math.min(255, energy * 5);
-    const b = Math.max(50, mood * 100 + 150);
+    // 小さなタイルで再描画（歪み表現）
+    let i = 0;
+    for(let y=0;y<h;y+=gap){
+      for(let x=0;x<w;x+=gap){
+        const p = points[i++];
+        ctx.drawImage(
+          img,
+          x, y, gap, gap,   // 元画像の切り出し
+          p.x, p.y, gap, gap // 変形後の位置
+        );
+      }
+    }
+  }
 
-    ctx.beginPath();
-    ctx.lineWidth = 2.5;
-    ctx.arc(ripple.x, ripple.y, ripple.radius, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${ripple.life / 60})`;
-    ctx.stroke();
-
-    if (ripple.life <= 0) ripples.splice(i, 1);
-  });
-
-  localStorage.setItem("world", JSON.stringify({
-    energy,
-    mood,
-    personality,
-    history,
-    lastTime: saved.lastTime
-  }));
+  // ===== 意味（メッセージ）=====
+  energy = Math.max(0, energy*0.98);
+  let text = "Stay.";
+  if(energy > 40) text = "You are affecting it.";
+  if(energy > 100) text = "You are changing everything.";
+  msg.textContent = text;
 
   requestAnimationFrame(loop);
 }
