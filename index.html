@@ -2,80 +2,67 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Self Evolving World</title>
-
+<title>触ると進化する世界</title>
 <style>
-body { margin:0; overflow:hidden; background:black; }
-canvas { position:fixed; top:0; left:0; }
+body { margin:0; background:black; overflow:hidden; }
+#msg {
+  position:fixed;
+  bottom:10px;
+  left:10px;
+  color:white;
+}
 </style>
 </head>
-
 <body>
 
-<canvas id="canvas"></canvas>
+<div id="msg">触るだけで変わる</div>
+<canvas id="c"></canvas>
 
 <script>
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+const c = document.getElementById("c");
+const ctx = c.getContext("2d");
 
-canvas.width = innerWidth;
-canvas.height = innerHeight;
+c.width = innerWidth;
+c.height = innerHeight;
 
-// 学習データ
-let data = JSON.parse(localStorage.getItem("aiData")) || {
-  touch: 0,
-  energy: 1
-};
-
+let energy = 1;
 let particles = [];
 
-// タッチ
-document.addEventListener("touchstart", e=>{
-  data.touch++;
+document.addEventListener("mousemove", e=>{
+  energy += 0.01;
 
-  for(let i=0;i<20*data.energy;i++){
+  for(let i=0;i<3*energy;i++){
     particles.push({
-      x:e.touches[0].clientX,
-      y:e.touches[0].clientY,
-      vx:(Math.random()-0.5)*5*data.energy,
-      vy:(Math.random()-0.5)*5*data.energy,
-      life:100
+      x:e.clientX,
+      y:e.clientY,
+      vx:(Math.random()-0.5)*3,
+      vy:(Math.random()-0.5)*3,
+      life:80
     });
   }
-
-  // 学習（進化）
-  data.energy += 0.1;
-
-  localStorage.setItem("aiData", JSON.stringify(data));
 });
 
-// 描画
-function draw(){
+function loop(){
   ctx.fillStyle="rgba(0,0,0,0.2)";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillRect(0,0,c.width,c.height);
 
   particles.forEach((p,i)=>{
-    p.x+=p.vx;
-    p.y+=p.vy;
+    p.vy += 0.05;
+    p.x += p.vx;
+    p.y += p.vy;
     p.life--;
 
-    ctx.beginPath();
-    ctx.arc(p.x,p.y,3,0,Math.PI*2);
-    ctx.fillStyle=`rgba(0,255,200,${p.life/100})`;
-    ctx.fill();
+    ctx.fillStyle="white";
+    ctx.fillRect(p.x,p.y,2,2);
 
     if(p.life<=0) particles.splice(i,1);
   });
 
-  requestAnimationFrame(draw);
+  requestAnimationFrame(loop);
 }
 
-draw();
+loop();
 </script>
 
 </body>
 </html>
-
-
-
-
