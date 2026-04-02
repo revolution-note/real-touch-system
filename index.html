@@ -1,162 +1,803 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Real Touch System</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>REAL MAGIC ULTIMATE</title>
 <style>
-body{margin:0;background:#000;overflow:hidden;}
-#ui{position:fixed;bottom:10px;left:10px;}
-button{margin:4px;padding:10px;}
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #000;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    font-family: sans-serif;
+  }
+
+  #cam {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+
+  #c {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  #topbar {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    pointer-events: auto;
+  }
+
+  button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: rgba(15,15,15,0.8);
+    color: white;
+    font-size: 14px;
+    backdrop-filter: blur(4px);
+  }
+
+  button.active {
+    outline: 2px solid rgba(255,255,255,0.7);
+  }
+
+  #info {
+    position: fixed;
+    left: 8px;
+    bottom: 8px;
+    z-index: 2;
+    color: white;
+    font-size: 12px;
+    background: rgba(0,0,0,0.35);
+    padding: 8px 10px;
+    border-radius: 10px;
+    backdrop-filter: blur(4px);
+    line-height: 1.5;
+    white-space: pre-line;
+  }
 </style>
 </head>
 <body>
 
+<video id="cam" autoplay playsinline muted></video>
 <canvas id="c"></canvas>
 
-<div id="ui">
-<button onclick="connect()">接続</button>
-<button onclick="mode=1">水</button>
-<button onclick="mode=2">火</button>
-<button onclick="mode=3">石</button>
-<button onclick="toggleSlice()">断面</button>
+<div id="topbar">
+  <button data-mode="water">💧 水</button>
+  <button data-mode="fire">🔥 火</button>
+  <button data-mode="earth">🪨 土</button>
+  <button data-mode="life">🌱 植物</button>
+  <button data-mode="lightning">⚡ 雷</button>
+  <button id="windBtn">🌪 風</button>
+  <button id="timeBtn">🌗 昼夜</button>
+  <button id="camBtn">📷 カメラ</button>
+  <button id="motionBtn">📱 傾き</button>
+  <button id="fsBtn">⛶ 全画面</button>
+  <button id="resetBtn">♻ リセット</button>
 </div>
 
-<script type="module">
+<div id="info">REAL MAGIC ULTIMATE
+タップ: 生成
+長押し: 連続生成
+ドラッグ: かき回す</div>
 
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js";
+<script>
+(() => {
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const cam = document.getElementById("cam");
+  const info = document.getElementById("info");
 
-const canvas = document.getElementById("c");
-const renderer = new THREE.WebGLRenderer({canvas});
-renderer.setSize(window.innerWidth,window.innerHeight);
+  let W = innerWidth;
+  let H = innerHeight;
+  canvas.width = W;
+  canvas.height = H;
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70,window.innerWidth/window.innerHeight,0.1,100);
-camera.position.z = 2;
-
-// 画像
-const tex = await new THREE.TextureLoader().loadAsync("https://picsum.photos/512");
-
-const geo = new THREE.PlaneGeometry(1.5,1.5,128,128);
-const mat = new THREE.MeshStandardMaterial({map:tex});
-const mesh = new THREE.Mesh(geo,mat);
-scene.add(mesh);
-
-// ライト
-const light = new THREE.DirectionalLight(0xffffff,1);
-light.position.set(1,1,1);
-scene.add(light);
-
-// 入力
-const ray = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-
-let hit=false;
-let uv=new THREE.Vector2();
-
-canvas.addEventListener("pointermove",e=>{
-  mouse.x = (e.clientX/window.innerWidth)*2-1;
-  mouse.y = -(e.clientY/window.innerHeight)*2+1;
-
-  ray.setFromCamera(mouse,camera);
-  const res = ray.intersectObject(mesh);
-
-  if(res.length>0){
-    hit=true;
-    uv = res[0].uv;
-  }else{
-    hit=false;
+  function resize() {
+    W = innerWidth;
+    H = innerHeight;
+    canvas.width = W;
+    canvas.height = H;
   }
-});
+  addEventListener("resize", resize);
 
-// 変形
-let touches=[];
+  const state = {
+    mode: "water",
+    particles: [],
+    sparks: [],
+    ripples: [],
+    isNight: false,
+    windX: 0,
+    windY: 0,
+    gravityX: 0,
+    gravityY: 0.18,
+    dragging: false,
+    cameraOn: false,
+    motionOn: false,
+    lastPointerX: W / 2,
+    lastPointerY: H / 2,
+    pointerVX: 0,
+    pointerVY: 0,
+    pressureSpawnTimer: null,
+    audioStarted: false
+  };
 
-function deform(){
-  const pos = mesh.geometry.attributes.position;
-
-  for(let i=0;i<pos.count;i++){
-    let z=0;
-
-    const u = (i%128)/128;
-    const v = Math.floor(i/128)/128;
-
-    touches.forEach(t=>{
-      const d = Math.hypot(u-t.x,v-t.y);
-      if(d<0.1){
-        z -= (0.1-d)*t.f;
-      }
+  // ===== UI =====
+  const modeButtons = [...document.querySelectorAll("[data-mode]")];
+  function updateModeButtons() {
+    modeButtons.forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.mode === state.mode);
     });
+  }
+  modeButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.mode = btn.dataset.mode;
+      updateModeButtons();
+      haptic("soft");
+      playToneForMode(state.mode);
+    });
+  });
+  updateModeButtons();
 
-    pos.array[i*3+2] = z;
+  document.getElementById("windBtn").addEventListener("click", () => {
+    burstWind();
+    haptic("wind");
+    playTone(180, 0.12, "triangle");
+  });
+
+  document.getElementById("timeBtn").addEventListener("click", () => {
+    state.isNight = !state.isNight;
+    haptic("soft");
+    playTone(state.isNight ? 140 : 260, 0.12, "sine");
+  });
+
+  document.getElementById("camBtn").addEventListener("click", async () => {
+    await startAudio();
+    await toggleCamera();
+  });
+
+  document.getElementById("motionBtn").addEventListener("click", async () => {
+    await enableMotion();
+  });
+
+  document.getElementById("fsBtn").addEventListener("click", async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+      haptic("soft");
+    } catch {}
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    state.particles.length = 0;
+    state.sparks.length = 0;
+    state.ripples.length = 0;
+    haptic("earth");
+    playTone(90, 0.15, "square");
+  });
+
+  // ===== Audio =====
+  let audioCtx = null;
+
+  async function startAudio() {
+    if (state.audioStarted) return;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
+      state.audioStarted = true;
+    } catch {}
   }
 
-  pos.needsUpdate=true;
+  function playTone(freq = 220, dur = 0.08, type = "sine", gainValue = 0.03) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
 
-  touches = touches.map(t=>({x:t.x,y:t.y,f:t.f*0.9})).filter(t=>t.f>0.01);
-}
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.value = gainValue;
 
-// 音
-const ctx = new AudioContext();
-function play(f){
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.frequency.value = 200+f*400;
-  g.gain.value = 0.1;
-  o.connect(g).connect(ctx.destination);
-  o.start();
-  o.stop(ctx.currentTime+0.05);
-}
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
 
-// 振動
-function vib(f){
-  if(navigator.vibrate){
-    navigator.vibrate(10+f*30);
-  }
-}
-
-// デバイス
-let port,writer;
-
-async function connect(){
-  port = await navigator.serial.requestPort();
-  await port.open({baudRate:9600});
-  writer = port.writable.getWriter();
-}
-
-async function send(t){
-  if(!writer) return;
-  await writer.write(new Uint8Array([t]));
-}
-
-// モード
-let mode=1;
-
-// 断面
-let slice=false;
-function toggleSlice(){
-  slice=!slice;
-  renderer.clippingPlanes = slice?[new THREE.Plane(new THREE.Vector3(0,0,1),0)]:[];
-}
-
-// ループ
-function loop(){
-
-  if(hit){
-    touches.push({x:uv.x,y:uv.y,f:0.5});
-
-    play(0.5);
-    vib(0.5);
-    send(mode);
+    const now = audioCtx.currentTime;
+    osc.start(now);
+    gain.gain.setValueAtTime(gainValue, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    osc.stop(now + dur);
   }
 
-  deform();
-  renderer.render(scene,camera);
-  requestAnimationFrame(loop);
-}
+  function playToneForMode(mode) {
+    if (mode === "water") playTone(330, 0.08, "sine", 0.025);
+    if (mode === "fire") playTone(120, 0.08, "sawtooth", 0.03);
+    if (mode === "earth") playTone(80, 0.09, "square", 0.03);
+    if (mode === "life") playTone(440, 0.08, "triangle", 0.025);
+    if (mode === "lightning") playTone(760, 0.04, "square", 0.02);
+  }
 
-loop();
+  // ===== Haptics =====
+  function haptic(type) {
+    if (!navigator.vibrate) return;
+    if (type === "soft") navigator.vibrate(15);
+    if (type === "water") navigator.vibrate([10, 20, 10]);
+    if (type === "fire") navigator.vibrate([8, 8, 8, 8]);
+    if (type === "earth") navigator.vibrate(60);
+    if (type === "life") navigator.vibrate([15, 10, 20]);
+    if (type === "wind") navigator.vibrate([12, 25, 12]);
+    if (type === "lightning") navigator.vibrate([30, 20, 45]);
+  }
 
+  // ===== Camera =====
+  async function toggleCamera() {
+    try {
+      if (!state.cameraOn) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        cam.srcObject = stream;
+        cam.style.opacity = "1";
+        state.cameraOn = true;
+        haptic("soft");
+        playTone(300, 0.1, "triangle");
+      } else {
+        const stream = cam.srcObject;
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+        }
+        cam.srcObject = null;
+        cam.style.opacity = "0";
+        state.cameraOn = false;
+        haptic("soft");
+        playTone(180, 0.1, "triangle");
+      }
+    } catch (e) {
+      info.textContent = "カメラを許可すると現実背景と重ねられる";
+    }
+  }
+
+  // ===== Device Motion =====
+  async function enableMotion() {
+    try {
+      if (typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function") {
+        const res = await DeviceOrientationEvent.requestPermission();
+        if (res !== "granted") return;
+      }
+
+      addEventListener("deviceorientation", onOrientation, { passive: true });
+      state.motionOn = true;
+      haptic("soft");
+      playTone(520, 0.08, "triangle");
+    } catch {}
+  }
+
+  function onOrientation(e) {
+    if (!state.motionOn) return;
+    const gamma = e.gamma || 0; // left-right
+    const beta = e.beta || 0;   // front-back
+
+    state.gravityX = clamp(gamma / 45, -1.2, 1.2) * 0.12;
+    state.gravityY = 0.18 + clamp(beta / 90, -1, 1) * 0.08;
+  }
+
+  // ===== Helpers =====
+  function rand(min, max) {
+    return Math.random() * (max - min) + min;
+  }
+
+  function clamp(v, a, b) {
+    return Math.max(a, Math.min(b, v));
+  }
+
+  function dist(ax, ay, bx, by) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    return Math.hypot(dx, dy);
+  }
+
+  // ===== Particle =====
+  class Particle {
+    constructor(x, y, type) {
+      this.x = x;
+      this.y = y;
+      this.type = type;
+      this.vx = rand(-1.2, 1.2);
+      this.vy = rand(-2.2, 0.5);
+      this.r = type === "earth" ? rand(4, 7) : rand(2.5, 5);
+      this.temp = type === "fire" ? 120 : type === "steam" ? 70 : 20;
+      this.life = type === "earth" ? 600 : 260;
+      this.seed = Math.random() * 9999;
+      this.stuck = false;
+    }
+
+    update(index) {
+      // 基本力
+      if (this.type !== "fire" && this.type !== "steam" && !this.stuck) {
+        this.vx += state.gravityX;
+        this.vy += state.gravityY;
+      }
+
+      if (this.type === "steam") {
+        this.vy -= 0.12;
+        this.vx *= 0.995;
+      }
+
+      if (this.type === "fire") {
+        this.vy -= 0.05;
+        this.vx += rand(-0.03, 0.03);
+      }
+
+      // 風
+      this.vx += state.windX;
+      this.vy += state.windY;
+
+      // ドラッグの流れ
+      const dPointer = dist(this.x, this.y, state.lastPointerX, state.lastPointerY);
+      if (state.dragging && dPointer < 90) {
+        const force = (1 - dPointer / 90) * 0.18;
+        this.vx += state.pointerVX * force * 0.4;
+        this.vy += state.pointerVY * force * 0.4;
+      }
+
+      // 粒子相互作用
+      for (let j = index + 1; j < state.particles.length; j++) {
+        const p = state.particles[j];
+        const dx = p.x - this.x;
+        const dy = p.y - this.y;
+        const d = Math.hypot(dx, dy);
+        const minD = this.r + p.r;
+
+        if (d > 0 && d < minD + 3) {
+          const nx = dx / d;
+          const ny = dy / d;
+
+          // ゆるい押し合い
+          const push = (minD - d) * 0.012;
+          this.vx -= nx * push;
+          this.vy -= ny * push;
+          p.vx += nx * push;
+          p.vy += ny * push;
+
+          // 相互作用
+          if (this.type === "water" && p.type === "fire") {
+            p.temp -= 1.8;
+            this.temp += 0.35;
+            if (Math.random() < 0.05) state.sparks.push(new Spark((this.x + p.x) / 2, (this.y + p.y) / 2, "steam"));
+          }
+          if (this.type === "fire" && p.type === "water") {
+            this.temp -= 1.8;
+            p.temp += 0.35;
+            if (Math.random() < 0.05) state.sparks.push(new Spark((this.x + p.x) / 2, (this.y + p.y) / 2, "steam"));
+          }
+
+          if ((this.type === "life" && p.type === "water") || (this.type === "water" && p.type === "life")) {
+            if (Math.random() < 0.02) {
+              const lifeP = this.type === "life" ? this : p;
+              lifeP.life += 1.4;
+            }
+          }
+
+          if ((this.type === "lightning" && p.type === "fire") || (this.type === "fire" && p.type === "lightning")) {
+            if (Math.random() < 0.08) {
+              const fx = (this.x + p.x) / 2;
+              const fy = (this.y + p.y) / 2;
+              for (let k = 0; k < 4; k++) {
+                state.particles.push(new Particle(fx + rand(-10,10), fy + rand(-10,10), "fire"));
+              }
+            }
+          }
+
+          if ((this.type === "lightning" && p.type === "water") || (this.type === "water" && p.type === "lightning")) {
+            if (Math.random() < 0.04) {
+              for (let k = 0; k < 5; k++) {
+                state.sparks.push(new Spark((this.x + p.x) / 2, (this.y + p.y) / 2, "flash"));
+              }
+            }
+          }
+        }
+      }
+
+      // 温度 / 状態変化
+      this.temp -= 0.04;
+
+      if (this.type === "water" && this.temp > 58) {
+        this.type = "steam";
+        this.r *= 0.9;
+      }
+
+      if (this.type === "steam" && this.temp < 42) {
+        this.type = "water";
+      }
+
+      if (this.type === "fire" && this.temp < 28) {
+        this.life = 0;
+      }
+
+      if (this.type === "life") {
+        const nightPenalty = state.isNight ? 0.12 : 0.04;
+        this.life -= nightPenalty;
+      }
+
+      if (this.type === "lightning") {
+        this.life -= 6;
+      }
+
+      // 移動
+      this.x += this.vx;
+      this.y += this.vy;
+
+      // 摩擦
+      this.vx *= this.type === "earth" ? 0.985 : 0.996;
+      this.vy *= this.type === "earth" ? 0.985 : 0.996;
+
+      // 壁
+      if (this.x < this.r) {
+        this.x = this.r;
+        this.vx *= -0.45;
+      }
+      if (this.x > W - this.r) {
+        this.x = W - this.r;
+        this.vx *= -0.45;
+      }
+
+      // 床
+      const floorY = H - 10;
+      if (this.y > floorY - this.r) {
+        this.y = floorY - this.r;
+
+        if (this.type === "earth") {
+          this.vx *= 0.6;
+          this.vy *= -0.15;
+          if (Math.abs(this.vy) < 0.25) {
+            this.vx = 0;
+            this.vy = 0;
+            this.stuck = true;
+          }
+        } else if (this.type === "water") {
+          this.vy *= -0.18;
+          this.vx *= 0.98;
+          state.ripples.push(new Ripple(this.x, floorY - 2, "water"));
+        } else if (this.type === "fire") {
+          this.vy *= -0.1;
+          this.vx *= 0.95;
+        } else if (this.type === "life") {
+          this.vy *= -0.08;
+          this.vx *= 0.85;
+        } else if (this.type === "steam") {
+          // 蒸気は床で少し戻る
+          this.vy *= -0.02;
+        } else {
+          this.vy *= -0.22;
+        }
+      }
+
+      this.life--;
+    }
+
+    draw() {
+      if (this.type === "water") {
+        ctx.fillStyle = "rgba(40,150,255,0.82)";
+      } else if (this.type === "fire") {
+        ctx.fillStyle = "rgba(255,110,30,0.9)";
+      } else if (this.type === "earth") {
+        ctx.fillStyle = "rgba(110,75,40,0.96)";
+      } else if (this.type === "life") {
+        ctx.fillStyle = "rgba(80,255,100,0.9)";
+      } else if (this.type === "steam") {
+        ctx.fillStyle = "rgba(220,220,220,0.22)";
+      } else if (this.type === "lightning") {
+        ctx.fillStyle = "rgba(220,240,255,0.95)";
+      } else {
+        ctx.fillStyle = "white";
+      }
+
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (this.type === "fire") {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r * 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255,120,30,0.08)";
+        ctx.fill();
+      }
+
+      if (this.type === "lightning") {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r * 2.4, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(180,220,255,0.08)";
+        ctx.fill();
+      }
+    }
+  }
+
+  class Spark {
+    constructor(x, y, type) {
+      this.x = x;
+      this.y = y;
+      this.type = type;
+      this.life = type === "flash" ? 10 : 28;
+      this.vx = rand(-1.2, 1.2);
+      this.vy = rand(-1.8, -0.2);
+      this.r = rand(1, 3);
+    }
+
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vx *= 0.99;
+      this.vy *= 0.99;
+      this.life--;
+    }
+
+    draw() {
+      if (this.type === "steam") {
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+      } else {
+        ctx.fillStyle = "rgba(220,245,255,0.8)";
+      }
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  class Ripple {
+    constructor(x, y, type) {
+      this.x = x;
+      this.y = y;
+      this.type = type;
+      this.life = 24;
+      this.radius = 4;
+    }
+
+    update() {
+      this.radius += 1.8;
+      this.life--;
+    }
+
+    draw() {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.strokeStyle = this.type === "water"
+        ? `rgba(100,180,255,${this.life / 30})`
+        : `rgba(255,255,255,${this.life / 30})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  // ===== Spawn =====
+  function spawn(x, y, type = state.mode, amount = 16) {
+    for (let i = 0; i < amount; i++) {
+      const px = x + rand(-8, 8);
+      const py = y + rand(-8, 8);
+      state.particles.push(new Particle(px, py, type));
+    }
+
+    if (type === "water") {
+      state.ripples.push(new Ripple(x, y, "water"));
+      haptic("water");
+    }
+    if (type === "fire") haptic("fire");
+    if (type === "earth") haptic("earth");
+    if (type === "life") haptic("life");
+    if (type === "lightning") {
+      haptic("lightning");
+      lightningStrike(x, y);
+    }
+
+    playToneForMode(type);
+  }
+
+  function lightningStrike(x, y) {
+    playTone(880, 0.03, "square", 0.025);
+    playTone(110, 0.16, "sawtooth", 0.03);
+
+    const segments = 16;
+    let lx = x;
+    let ly = 0;
+    for (let i = 0; i < segments; i++) {
+      const nx = lx + rand(-18, 18);
+      const ny = ly + (y - ly) / (segments - i);
+      state.sparks.push(new Spark(nx, ny, "flash"));
+      lx = nx;
+      ly = ny;
+    }
+
+    for (let i = 0; i < 10; i++) {
+      state.particles.push(new Particle(x + rand(-18,18), y + rand(-18,18), "lightning"));
+    }
+    for (let i = 0; i < 8; i++) {
+      state.particles.push(new Particle(x + rand(-12,12), y + rand(-12,12), "fire"));
+    }
+  }
+
+  function burstWind() {
+    state.windX = rand(-0.08, 0.08);
+    state.windY = rand(-0.01, 0.01);
+    setTimeout(() => {
+      state.windX = 0;
+      state.windY = 0;
+    }, 2200);
+  }
+
+  // ===== Pointer =====
+  let lastMoveTime = performance.now();
+
+  canvas.addEventListener("pointerdown", async (e) => {
+    await startAudio();
+    state.dragging = true;
+    const x = e.clientX;
+    const y = e.clientY;
+    state.lastPointerX = x;
+    state.lastPointerY = y;
+    state.pointerVX = 0;
+    state.pointerVY = 0;
+    spawn(x, y, state.mode, state.mode === "earth" ? 10 : 16);
+
+    clearInterval(state.pressureSpawnTimer);
+    state.pressureSpawnTimer = setInterval(() => {
+      if (state.dragging) {
+        spawn(state.lastPointerX, state.lastPointerY, state.mode, state.mode === "lightning" ? 4 : 10);
+      }
+    }, 130);
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    const now = performance.now();
+    const dt = Math.max(8, now - lastMoveTime);
+    const x = e.clientX;
+    const y = e.clientY;
+
+    state.pointerVX = (x - state.lastPointerX) / dt * 16;
+    state.pointerVY = (y - state.lastPointerY) / dt * 16;
+    state.lastPointerX = x;
+    state.lastPointerY = y;
+
+    if (state.dragging && Math.random() < 0.5) {
+      spawn(x, y, state.mode, 3);
+    }
+
+    lastMoveTime = now;
+  });
+
+  function endPointer() {
+    state.dragging = false;
+    clearInterval(state.pressureSpawnTimer);
+  }
+
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("pointerleave", endPointer);
+
+  // ===== Background / FX =====
+  function drawBackground() {
+    if (state.cameraOn) {
+      ctx.fillStyle = state.isNight ? "rgba(0,0,20,0.18)" : "rgba(0,0,0,0.08)";
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      if (state.isNight) {
+        g.addColorStop(0, "#050814");
+        g.addColorStop(0.55, "#0a1020");
+        g.addColorStop(1, "#120d08");
+      } else {
+        g.addColorStop(0, "#5cc7ff");
+        g.addColorStop(0.6, "#d6f4ff");
+        g.addColorStop(1, "#1b130c");
+      }
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // 地面
+    ctx.fillStyle = state.isNight ? "rgba(20,12,6,0.95)" : "rgba(55,35,20,0.92)";
+    ctx.fillRect(0, H - 10, W, 10);
+
+    // 星 / 光
+    if (state.isNight) {
+      for (let i = 0; i < 24; i++) {
+        const sx = (i * 137.5) % W;
+        const sy = ((i * 61.3) % (H * 0.45));
+        ctx.fillStyle = "rgba(255,255,255,0.65)";
+        ctx.fillRect(sx, sy, 1.5, 1.5);
+      }
+    }
+  }
+
+  // ===== Loop =====
+  function loop() {
+    drawBackground();
+
+    // 軽く数制御
+    if (state.particles.length > 3200) {
+      state.particles.splice(0, state.particles.length - 3200);
+    }
+    if (state.sparks.length > 500) {
+      state.sparks.splice(0, state.sparks.length - 500);
+    }
+
+    // Ripple
+    for (let i = state.ripples.length - 1; i >= 0; i--) {
+      const r = state.ripples[i];
+      r.update();
+      r.draw();
+      if (r.life <= 0) state.ripples.splice(i, 1);
+    }
+
+    // Particle
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const p = state.particles[i];
+      p.update(i);
+      p.draw();
+      if (p.life <= 0 || p.y < -60 || p.x < -80 || p.x > W + 80) {
+        state.particles.splice(i, 1);
+      }
+    }
+
+    // Sparks
+    for (let i = state.sparks.length - 1; i >= 0; i--) {
+      const s = state.sparks[i];
+      s.update();
+      s.draw();
+      if (s.life <= 0) state.sparks.splice(i, 1);
+    }
+
+    // 情報
+    info.textContent =
+`REAL MAGIC ULTIMATE
+粒子: ${state.particles.length}
+モード: ${labelMode(state.mode)}
+${state.cameraOn ? "カメラ: ON" : "カメラ: OFF"} / ${state.motionOn ? "傾き: ON" : "傾き: OFF"}
+タップ: 生成
+長押し: 連続生成
+ドラッグ: かき回す`;
+
+    requestAnimationFrame(loop);
+  }
+
+  function labelMode(m) {
+    if (m === "water") return "水";
+    if (m === "fire") return "火";
+    if (m === "earth") return "土";
+    if (m === "life") return "植物";
+    if (m === "lightning") return "雷";
+    return m;
+  }
+
+  // 初期演出
+  for (let i = 0; i < 40; i++) state.particles.push(new Particle(rand(W*0.3, W*0.7), rand(H*0.25, H*0.55), "water"));
+  for (let i = 0; i < 18; i++) state.particles.push(new Particle(rand(W*0.4, W*0.6), rand(H*0.45, H*0.7), "earth"));
+
+  loop();
+})();
 </script>
 </body>
 </html>
